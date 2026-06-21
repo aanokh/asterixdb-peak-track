@@ -24,6 +24,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.Hashtable;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.apache.hyracks.api.application.INCServiceContext;
@@ -96,6 +97,11 @@ public class Joblet implements IHyracksJobletContext, ICounterContext {
     private final FrameManager frameManager;
 
     private final AtomicLong memoryAllocation;
+
+    // peak frame tracking for this query
+    private final AtomicLong liveFrames = new AtomicLong();
+    private final AtomicLong peakFrames = new AtomicLong();
+    private final Map<String, Long> peakFramesByOperatorType = new ConcurrentHashMap<>();
 
     private JobStatus cleanupStatus;
 
@@ -246,7 +252,25 @@ public class Joblet implements IHyracksJobletContext, ICounterContext {
         deallocatableRegistry.registerDeallocatable(deallocatable);
     }
 
+    @Override
+    public synchronized void reportOperatorPeak(String operatorType, long frames) {
+        peakFramesByOperatorType.put(operatorType, peakFramesByOperatorType.getOrDefault(operatorType, 0L) + frames);
+    }
+
+    private synchronized void logOperatorPeaks() {
+        for (Map.Entry<String, Long> e : peakFramesByOperatorType.entrySet()) {
+            LOGGER.info("  " + e.getKey() + " peak " + e.getValue() + " frames");
+        }
+    }
+
     public void close() {
+        if (peakFrames.get() > 0) {
+            long nodeFrames =
+                    Math.max(1, serviceCtx.getMemoryManager().getMaximumMemory() / frameManager.getInitialFrameSize());
+            LOGGER.info("query " + jobId + " peak " + peakFrames.get() + " frames, "
+                    + String.format("%.3f", 100.0 * peakFrames.get() / nodeFrames) + "% of node");
+            logOperatorPeaks();
+        }
         long stillAllocated = memoryAllocation.get();
         if (stillAllocated > 0) {
             LOGGER.trace(() -> "Freeing leaked " + stillAllocated + " bytes");
@@ -264,6 +288,7 @@ public class Joblet implements IHyracksJobletContext, ICounterContext {
     public ByteBuffer allocateFrame(int bytes) throws HyracksDataException {
         if (serviceCtx.getMemoryManager().allocate(bytes)) {
             memoryAllocation.addAndGet(bytes);
+            peakFrames.accumulateAndGet(liveFrames.addAndGet(bytes / frameManager.getInitialFrameSize()), Math::max);
             return frameManager.allocateFrame(bytes);
         }
         throw new HyracksDataException("Unable to allocate frame: Not enough memory");
@@ -278,6 +303,7 @@ public class Joblet implements IHyracksJobletContext, ICounterContext {
     @Override
     public void deallocateFrames(int bytes) {
         memoryAllocation.addAndGet(bytes);
+        liveFrames.addAndGet(-(bytes / frameManager.getInitialFrameSize()));
         serviceCtx.getMemoryManager().deallocate(bytes);
         frameManager.deallocateFrames(bytes);
     }

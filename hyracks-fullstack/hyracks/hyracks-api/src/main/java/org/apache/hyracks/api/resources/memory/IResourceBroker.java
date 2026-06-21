@@ -16,15 +16,22 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+package org.apache.hyracks.api.resources.memory;
 
-package org.apache.hyracks.dataflow.std.buffermanager;
+import org.apache.hyracks.api.dataflow.OperatorInstanceId;
 
-import java.nio.ByteBuffer;
+public interface IResourceBroker {
 
-public interface IDeallocatableFramePool extends IFramePool {
+    void register(OperatorInstanceId id, String operatorType, int queryPriority, int minBudgetInFrames,
+            int initialBudgetInFrames);
 
-    void deAllocateBuffer(ByteBuffer buffer);
+    void deregister(OperatorInstanceId id);
 
-    int getPeakAllocatedBytes();
+    void signalPressure(OperatorInstanceId id, double budgetUtilization);
 
+    int requestMemory(OperatorInstanceId id, int heldFrames);
+
+    void reportFreedMemory(OperatorInstanceId id, int numFrames);
+
+    int checkBudget(OperatorInstanceId id);
 }

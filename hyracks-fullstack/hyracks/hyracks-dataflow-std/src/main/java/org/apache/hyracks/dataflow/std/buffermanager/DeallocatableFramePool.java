@@ -31,6 +31,7 @@ public class DeallocatableFramePool implements IDeallocatableFramePool {
     private final IHyracksFrameMgrContext ctx;
     private final int memBudget;
     private int allocated;
+    private int peakAllocated;
     private LinkedList<ByteBuffer> buffers;
 
     public DeallocatableFramePool(IHyracksFrameMgrContext ctx, int memBudgetInBytes) {
@@ -80,7 +81,13 @@ public class DeallocatableFramePool implements IDeallocatableFramePool {
 
     private ByteBuffer createNewFrame(int frameSize) throws HyracksDataException {
         allocated += frameSize;
+        peakAllocated = Math.max(peakAllocated, allocated);
         return ctx.allocateFrame(frameSize);
+    }
+
+    @Override
+    public int getPeakAllocatedBytes() {
+        return peakAllocated;
     }
 
     private boolean haveEnoughFreeSpace(int frameSize) {

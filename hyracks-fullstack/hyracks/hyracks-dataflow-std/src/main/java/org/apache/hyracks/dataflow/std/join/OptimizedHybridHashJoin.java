@@ -96,6 +96,7 @@ public class OptimizedHybridHashJoin {
     private final TuplePointer tempPtr = new TuplePointer();
     private int[] probePSizeInTups;
     private IOperatorStats stats = null;
+    private IDeallocatableFramePool framePool;
 
     public OptimizedHybridHashJoin(IHyracksJobletContext jobletCtx, int memSizeInFrames, int numOfPartitions,
             String probeRelName, String buildRelName, RecordDescriptor probeRd, RecordDescriptor buildRd,
@@ -131,8 +132,7 @@ public class OptimizedHybridHashJoin {
     }
 
     public void initBuild() throws HyracksDataException {
-        IDeallocatableFramePool framePool =
-                new DeallocatableFramePool(jobletCtx, memSizeInFrames * jobletCtx.getInitialFrameSize());
+        framePool = new DeallocatableFramePool(jobletCtx, memSizeInFrames * jobletCtx.getInitialFrameSize());
         bufferManagerForHashTable = new FramePoolBackedFrameBufferManager(framePool);
         bufferManager = new VPartitionTupleBufferManager(
                 PreferToSpillFullyOccupiedFramePolicy.createAtMostOneFrameForSpilledPartitionConstrain(spilledStatus),
@@ -583,6 +583,10 @@ public class OptimizedHybridHashJoin {
     }
 
     public void releaseResource() throws HyracksDataException {
+        // report this join's peak frame usage to the joblet
+        if (framePool != null) {
+            jobletCtx.reportOperatorPeak("HHJ", framePool.getPeakAllocatedBytes() / jobletCtx.getInitialFrameSize());
+        }
         inMemJoiner.closeTable();
         closeAllSpilledPartitions(probeRFWriters, probeRelName);
         bufferManager.close();

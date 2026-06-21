@@ -158,4 +158,8 @@ public class TestJobletContext implements IHyracksJobletContext {
     public long nextUniqueId() {
         return ids.getAndIncrement();
     }
+
+    @Override
+    public void reportOperatorPeak(String operatorType, long frames) {
+    }
 }

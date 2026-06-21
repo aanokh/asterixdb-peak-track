@@ -46,4 +46,7 @@ public interface IHyracksJobletContext extends IWorkspaceFileFactory, IDeallocat
     ClassLoader getClassLoader() throws HyracksException;
 
     long nextUniqueId();
+
+    // an operator reports its peak frame usage here, aggregated per type for the query
+    void reportOperatorPeak(String operatorType, long frames);
 }
